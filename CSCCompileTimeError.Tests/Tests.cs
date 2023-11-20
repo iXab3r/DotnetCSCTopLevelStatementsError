@@ -1,17 +1,6 @@
 ﻿using Microsoft.CodeAnalysis.Text;
 using Microsoft.CodeAnalysis;
 using NUnit.Framework;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Text;
-using Microsoft.CodeAnalysis.Emit;
-using System.Reflection;
-using System.IO;
-using Microsoft.CodeAnalysis.Host.Mef;
 using Shouldly;
 
 namespace CSCCompileTimeError.Tests;
@@ -20,14 +9,10 @@ namespace CSCCompileTimeError.Tests;
 public class Tests
 {
     [Test]
-    public async Task ShouldNotThrowOnCompilation() // throws
+    public async Task ShouldNotThrowOnCompilation() // throws Unable to cast object of type 'Microsoft.CodeAnalysis.CSharp.Syntax.CompilationUnitSyntax' to type 'Microsoft.CodeAnalysis.CSharp.Syntax.BaseTypeDeclarationSyntax'
     {
         // Given
-        var projectId = ProjectId.CreateNewId();
-        var projectInfo = ProjectInfo.Create(projectId, VersionStamp.Default, "NewProject", "NewProject", LanguageNames.CSharp);
-        
-        var workspace = new AdhocWorkspace();
-        workspace.AddProject(projectInfo);
+        var (workspace, projectId) = PrepareWorkspace();
 
         workspace.AddDocument(projectId, "Program.cs", SourceText.From("PrintLine();"));
         workspace.AddDocument(projectId, "ProgramBase.cs", SourceText.From("""
@@ -47,21 +32,17 @@ public class Tests
         var compilation = await project.GetCompilationAsync();
         
         // When
-        var action = () => compilation?.GetDiagnostics();
+        var diagnostics = compilation!.GetDiagnostics();
         
         // Then
-        action.ShouldNotThrow();
+        diagnostics.ShouldBeEmpty();
     }
     
     [Test]
     public async Task ShouldNotThrowOnCompilationFromSingleFile() // does not throw
     {
         // Given
-        var projectId = ProjectId.CreateNewId();
-        var projectInfo = ProjectInfo.Create(projectId, VersionStamp.Default, "NewProject", "NewProject", LanguageNames.CSharp);
-        
-        var workspace = new AdhocWorkspace();
-        workspace.AddProject(projectInfo);
+        var (workspace, projectId) = PrepareWorkspace();
 
         workspace.AddDocument(projectId, "Program.cs", SourceText.From("""
                                                                            PrintLine();
@@ -82,9 +63,51 @@ public class Tests
         var compilation = await project.GetCompilationAsync();
         
         // When
-        var action = () => compilation?.GetDiagnostics();
+        var diagnostics = compilation!.GetDiagnostics();
         
         // Then
-        action.ShouldNotThrow();
+        diagnostics.ShouldBeEmpty();
+    }
+    
+    [Test]
+    public async Task ShouldNotThrowOnCompilationWithoutInheritance() // does not throw
+    {
+        // Given
+        var (workspace, projectId) = PrepareWorkspace();
+
+        workspace.AddDocument(projectId, "Program.cs", SourceText.From("PrintLine();"));
+        workspace.AddDocument(projectId, "ProgramBase.cs", SourceText.From("""
+                                                                           partial class Program
+                                                                           {
+                                                                               public static void PrintLine()
+                                                                               {
+                                                                               }
+                                                                           }
+                                                                           """));
+
+        var project = workspace.CurrentSolution.GetProject(projectId)!;
+        var compilation = await project.GetCompilationAsync();
+        
+        // When
+        var diagnostics = compilation!.GetDiagnostics();
+        
+        // Then
+        diagnostics.ShouldBeEmpty();
+    }
+
+    private static (AdhocWorkspace workspace, ProjectId projectId)  PrepareWorkspace()
+    {
+        var projectId = ProjectId.CreateNewId();
+        var projectInfo = ProjectInfo.Create(
+            projectId, 
+            VersionStamp.Default, 
+            "NewProject", 
+            "NewProject", 
+            LanguageNames.CSharp,
+            metadataReferences: new MetadataReference[]{ MetadataReference.CreateFromFile(typeof(object).Assembly.Location) });
+        
+        var workspace = new AdhocWorkspace();
+        workspace.AddProject(projectInfo);
+        return (workspace, projectId);
     }
 }
